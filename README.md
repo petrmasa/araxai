@@ -1,10 +1,5 @@
 # ARAxai
 
-<img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/araxai">
-<img alt="PyPI - Wheel" src="https://img.shields.io/pypi/wheel/araxai">
-<img alt="PyPI - Status" src="https://img.shields.io/pypi/status/araxai">
-<img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dm/araxai">
-
 ## What is ARA (ARAxai package)
 
 ARAxai (association rule analysis) is a profiling tool that discovers main influencers in data. It can be also used to explain the model by simplification to outline most significant influencers.
