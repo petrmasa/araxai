@@ -1,0 +1,11 @@
+
+0.1.0 Initial version, print ara rules
+
+0.2.0 Full version
+- function to print task info and statistics
+- includes charts & export into the folder
+- includes a CLARA method
+
+0.2.1 
+- Auto boundary option to find predefined number of strongest influencers no matter how strong they are
+

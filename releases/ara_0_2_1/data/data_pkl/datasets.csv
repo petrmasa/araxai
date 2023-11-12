@@ -1,0 +1,12 @@
+filename;target;target_class
+accidents.zip;Severity;Fatal
+adults.zip;Target;>50K
+bmi.zip;Index;0
+diabetes.zip;Outcome;1
+iris.zip;Species;Iris-setosa
+loans.zip; loan_status; Approved
+marketing_campaign.zip;Response;1
+pistachio.zip;Class;Siit_Pistachio
+svmtrain.zip;Survived;1
+
+
