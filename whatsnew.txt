@@ -9,3 +9,12 @@
 0.2.1 
 - Auto boundary option to find predefined number of strongest influencers no matter how strong they are
 
+0.2.2
+- Font size change available
+- support for ordered categorical variables
+
+
+0.3.0 (stable release)
+- many bugfixes from feedback/betatesting (charts, printing - bugs based on various datasets)
+- ability to order variables by importance
+- return list json from print_

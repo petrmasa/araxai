@@ -1,3 +1,13 @@
+#0.0.51 auto boundaries
+#56 - ability to order variables by importance
+#57 - fixing bug - categories with both positive and negative value in chart
+#reason: preparation for joining categories - must be also ZOHLEDNENO in conditions and prints, now it prints and uses first value only, see ['value'] in program
+#fully fixed (or maybe developed)
+#58 - return list json from print_
+#59 - fixed printing bug for non-string data types
+
+#TODO - remove print debugs
+
 from cleverminer import cleverminer
 
 import pandas
@@ -5,6 +15,7 @@ import time
 import os
 
 from matplotlib import pyplot as plt
+from pandas.core.dtypes.common import is_categorical_dtype
 
 
 class ara:
@@ -13,7 +24,7 @@ class ara:
     Suitable for data profiling (what influences the target and how) as well as XAI method for explaining the model by simplification (how the model estimates a target).
     """
 
-    version_string = "0.2.1"
+    version_string = "0.3.0"
     max_depth = 2
     min_base = 20
     print_rules_on_the_fly = 0
@@ -24,6 +35,11 @@ class ara:
     max_rules=10
     max_iter=10
     init_stepping=2
+    max_seq_len=3
+    font_size_big = 40
+    font_size_normal=30
+    order_by_importance = False
+
 
     dir = None
 
@@ -35,6 +51,7 @@ class ara:
     end_time = None
 
     clms=[]
+    is_var_ordered ={}
 
     def __init__(self,df:pandas.DataFrame=None,target=None,target_class=None,options=None,CL=None):
         """
@@ -42,7 +59,7 @@ class ara:
         :param pandas.DataFrame df: pandas dataframe with input data
         :param string target: target variable of the dataset (profiling) or target prediction (for model explanation task)
         :param string target_class: target class of interest (when profiling more classes is needed, you can run this procedure in loop for all classes)
-        :param dict options: dictionary with options. Valid options are max_depth (maximum depth of rules searched; default=2), min_base (minimum base of the rule searched, default 20), print_rules_on_the_fly (default 0)
+        :param dict options: dictionary with options. Valid options are max_depth (maximum depth of rules searched; default=2), min_base (minimum base of the rule searched, default 20), print_rules_on_the_fly (default 0), order_by_importance (default False)
         """
         if not(target in df.columns):
             print(f"Error: target variable ({target}) is not in dataframe.")
@@ -53,6 +70,8 @@ class ara:
         if not(options is None):
             if "auto_boundaries" in options:
                 ara.auto_boundaries = options.get("auto_boundaries")
+            if "order_by_importance" in options:
+                ara.order_by_importance = options.get("order_by_importance")
         if not(ara.auto_boundaries):
             self.res = self._arar(df=df,target=target,target_class=target_class,options=options,cond_CL=CL)
         else:
@@ -122,6 +141,10 @@ class ara:
                     if "print_rules_on_the_fly" in options:
                         ara.print_rules_on_the_fly = options.get("print_rules_on_the_fly")
                         print("WARNING: this option is marked as experimental. Will be replaced.")
+                    if "font_size_big" in options:
+                        ara.font_size_big = options.get("font_size_big")
+                    if "font_size_normal" in options:
+                        ara.font_size_normal = options.get("font_size_normal")
                     if "boundaries" in options:
                         if forced_boundaries is None:
                             b = options.get("boundaries")
@@ -143,6 +166,12 @@ class ara:
                 print(f"..will initialize CLM#{i+1}")
                 clm_l=cleverminer(df=df)
                 ara.clms.append(clm_l)
+                for colname in df.columns:
+                    is_ordered = False
+                    if is_categorical_dtype(df[colname]):
+                        if df[colname].cat.ordered:
+                            is_ordered = True
+                    ara.is_var_ordered[colname] = is_ordered
         res_ara = []
         if (df is None):
             print("Dataframe is missing")
@@ -156,9 +185,14 @@ class ara:
         def var_str_to_literal(name):
             d = {}
             d['name']=name
-            d['type']='subset'
             d['minlen']=1
-            d['maxlen']=1
+            is_ordered = ara.is_var_ordered[name]
+            if is_ordered:
+                d['type'] = 'seq'
+                d['maxlen'] = ara.max_seq_len
+            else:
+                d['type']='subset'
+                d['maxlen']=1
             return d
         an=[]
         def cond_str_lst(cond):
@@ -175,12 +209,8 @@ class ara:
         cCL=[]
         if cond_CL is not None:
             for cl in cond_CL:
+
                 cCL.append(var_str_to_literal(cl))
-#            cond_lst = cond_str_lst(cond)
-#            cond_dic['attributes']=cond_lst
-#            cond_dic['minlen']=1
-#            cond_dic['maxlen'] = len(cond)
-#            cond_dic['type'] = 'con'
         for nm in df.columns:
             if not(nm==target):
                 if not(target in cond_str_lst(cond)):
@@ -196,8 +226,6 @@ class ara:
             su.append(d)
         clm = ara.clms[depth-1]
         cnd = cond
-#        if cnd is None:
-#            if not(co)
         if cond is None:
             if cond_CL is None:
                 clm.mine(proc='4ftMiner',quantifiers={'Base':ara.min_base}, ante ={'attributes':an, 'minlen':1, 'maxlen':1, 'type':'con'},
@@ -217,8 +245,31 @@ class ara:
                               )
 
 
+#        clm.print_rulelist()
+
         ara.stats["clm_runs"] += 1
-        for i in range(clm.get_rulecount()):
+
+
+        if ara.order_by_importance:
+
+            rulelist=[]
+            for i in range(clm.get_rulecount()):
+                rule = {}
+                rule['id'] = i+1
+                rule['lift'] = clm.get_quantifiers(i+1)['aad']+1
+                rule['abslift'] = clm.get_quantifiers(i + 1)['aad']+1
+                if rule['abslift']<1:
+                    rule['abslift'] = 1/rule['abslift']
+                rulelist.append(rule)
+
+            rulelist = sorted(rulelist, key=lambda d: abs(d['abslift']))#, reverse=True)
+
+
+        for ii in range(clm.get_rulecount()):
+            if ara.order_by_importance:
+                i = rulelist[ii]['id']-1
+            else:
+                i = ii
             rule_id = i+1
             fft = clm.get_fourfold(rule_id)
             lift = clm.get_quantifiers(rule_id)['aad']+1
@@ -260,9 +311,22 @@ class ara:
                 for i in range(len(cl2)):
                     ca = {}
                     ca['name'] = clm.result['datalabels']['varname'][cl2[i]]
-                    ca['type'] = 'one'
-                    #tbd replace it with direct reference
-                    ca['value'] = clm.result['datalabels']['catnames'][cl2[i]][vals2[i][0]]
+                    #ca['value'] = clm.result['datalabels']['catnames'][cl2[i]][vals2[i][0]]
+                    ca_values =[]
+                    ca_values_str = ''
+                    for ix in range(len(vals2[i])):
+                        ca_values.append(clm.result['datalabels']['catnames'][cl2[i]][vals2[i][ix]])
+                        ca_values_str += str(clm.result['datalabels']['catnames'][cl2[i]][vals2[i][ix]])
+                        ca_values_str += ' '
+                    ca_values_str = ca_values_str[:-1]
+                    if len(vals2[i])==1:
+                        ca['type'] = 'one'
+                        ca['value'] = clm.result['datalabels']['catnames'][cl2[i]][vals2[i][0]]
+                    else:
+                        ca['type'] = 'list'
+                        ca['value'] = ca_values
+                    ca['values'] = ca_values
+                    ca['values_str'] = ca_values_str
                     newcond.append(ca)
                 cond_d = {}
                 cond_d['attributes'] = newcond
@@ -278,7 +342,8 @@ class ara:
                 for i in range(len(newcond)):
                     vr={}
                     vr['varname']=newcond[i]['name']
-                    vr['value']=newcond[i]['value']
+                    vr['values']=newcond[i]['values']
+                    vr['values_str']=newcond[i]['values_str']
                     vars.append(vr)
                 res_l['vars'] = vars
                 res_l['fft'] = fft
@@ -287,8 +352,12 @@ class ara:
                 res_l["target_class_ratio"] = fft[0]/(fft[0]+fft[1])
                 if lift > 1:
                     res_l['booster'] ='x' + "{:.1f}".format(lift)
+                    res_l['booster_val'] = lift
+                    res_l['booster_way'] = 'x'
                 else:
                     res_l['booster'] ='/' + "{:.1f}".format(1/lift)
+                    res_l['booster_val'] = 1/lift
+                    res_l['booster_way'] = '/'
                 res_l['valid_level'] = valid
                 res_l['valid_level_disp_string'] = disp_str
                 res_l['sub'] = subres
@@ -356,7 +425,7 @@ class ara:
         print("(+ increases occurrence, - decreases occurrence, more signs means stronger influence)")
         print("")
         rules = self.get_rules()
-        self._print_result(res_i=rules)
+        return self._print_result(res_i=rules)
         print("")
 
 
@@ -364,12 +433,14 @@ class ara:
         """
         internal procedure for the ara recursion
         """
+        res=[]
         pre_cond=None
         pre_cond_last=None
         dpth=depth
         if dpth==None:
             dpth=1
         for item in res_i:
+            res_this = {}
             total_lift = mult*item['lift']
             if total_lift>=1:
                 total_lift_str="x" + "{:.1f}".format(total_lift)
@@ -382,7 +453,7 @@ class ara:
                 for iii in range(len(item['vars'])):
                     cnt+=1
                     if cnt>dpth:
-                        s = str(item['vars'][cnt-1]['varname'])+'('+str(item['vars'][cnt-1]['value'])+')'
+                        s = str(item['vars'][cnt-1]['varname'])+'('+str(item['vars'][cnt-1]['values_str'])+')'
                         if is_init:
                             pre_cond = "CONDITION "+s
                             is_init=False
@@ -390,12 +461,26 @@ class ara:
                             pre_cond = pre_cond + " & "+s
                 if not(pre_cond==pre_cond_last):
                     pre_cond_last=pre_cond
-                    print(f"{pre_cond} : ")
-            print(f"{pre}{item['valid_level_disp_string']} {item['vars'][0]['varname']}({item['vars'][0]['value']}) {item['booster']} (={total_lift_str})")
+            print(f"{pre}{item['valid_level_disp_string']} {item['vars'][0]['varname']}({item['vars'][0]['values_str']}) {item['booster']} (={total_lift_str})")
+            res_this['feature']=item['vars'][0]['varname'] +'(' + item['vars'][0]['values_str'] + ')'
+            res_this['booster']=item['booster']
+            res_this['booster_val']=item['booster_val']
+            res_this['booster_way']=item['booster_way']
+            if total_lift>=1:
+                res_this['total_booster'] = total_lift_str
+                res_this['total_booster_val'] = total_lift
+                res_this['total_booster_way'] = 'x'
+            else:
+                res_this['total_booster'] = total_lift_str
+                res_this['total_booster_val'] = 1/total_lift
+                res_this['total_booster_way'] = '/'
+
+            sub=[]
             if len(item['sub'])>0:
-                self._print_result(res_i=item['sub'],pre=pre+"    ",mult=total_lift,depth=dpth+1)
-
-
+                sub = self._print_result(res_i=item['sub'],pre=pre+"    ",mult=total_lift,depth=dpth+1)
+            res_this['sub'] = sub
+            res.append(res_this)
+        return res
     def _is_clara(self,res_i=None,depth=None):
         """
         internal procedure returning if the task was CL-ARA task
@@ -418,7 +503,7 @@ class ara:
                 for iii in range(len(item['vars'])):
                     cnt+=1
                     if cnt>dpth:
-                        s = str(item['vars'][cnt-1]['varname'])+'('+str(item['vars'][cnt-1]['value'])+')'
+                        s = str(item['vars'][cnt-1]['varname'])+'('+str(item['vars'][cnt-1]['values_str'])+')'
                         if is_init:
                             pre_cond = "CONDITION "+s
                             is_init=False
@@ -448,7 +533,7 @@ class ara:
             tcp=self.res['results']['target_var_profile']
             print(f"    Target class profile :")
             for itm in tcp:
-                print(f"                {itm.rjust(20,' ')} ({tcp[itm]:7d})")
+                print(f"                {str(itm).rjust(20,' ')} ({tcp[itm]:7d})")
             print("")
         else:
             print("Class not initialized. Please run ARA analysis first.")
@@ -492,7 +577,7 @@ class ara:
         y_grp=[]
         colr_grp=[]
         for item in res:
-            lbl = item['vars'][0]['varname']+"("+str(item['vars'][0]['value'])+")"
+            lbl = item['vars'][0]['varname']+"("+str(item['vars'][0]['values_str'])+")"
             val=item['lift']
             col='g'
             if val<1:
@@ -507,11 +592,11 @@ class ara:
 
         plt.rc('font', **font)
         plt.figure(figsize=(1920*px,1080*px))
-        plt.title("Overall dataset profiles/global model properties\n Lift of literals that most influence the target class",fontsize = 40)
+        plt.title("Overall dataset profiles/global model properties\n Lift of literals that most influence the target class",fontsize = ara.font_size_big)
         barlist=plt.barh(x,y)
         for i in range(len(colr)):
             barlist[i].set_color(colr[i])
-        plt.tick_params(axis='y', labelsize=30)
+        plt.tick_params(axis='y', labelsize=ara.font_size_normal)
         plt.tight_layout()
         plt.savefig(os.path.join(ara.dir,"total.png"),bbox_inches='tight')
         plt.clf()
@@ -544,7 +629,7 @@ class ara:
             mult3 = total_lift
             if mult3 < 1:
                 mult3 = -1 / mult3
-            lbl = item['vars'][0]['varname'] + "(" + str(item['vars'][0]['value']) + ")"
+            lbl = item['vars'][0]['varname'] + "(" + str(item['vars'][0]['values_str']) + ")"
             val = total_lift
             val_loc = item['lift']
             col = 'g'
@@ -567,7 +652,7 @@ class ara:
                 y_grp = y_grp + y_sub
                 colr_grp = colr_grp + col_sub
                 fig, axs = plt.subplots(2,figsize=(1920*px,1080*px))
-                fig.suptitle('Local and global profiling of/with '+pre+" "+lbl,fontsize = 40)
+                fig.suptitle('Local and global profiling of/with '+pre+" "+lbl,fontsize = ara.font_size_big)
                 barlist2 = axs[1].barh(x_sub, y_sub)
                 barlist3 = axs[0].barh(x_sub, y_sub_loc)
                 for i in range(len(col_sub)):
@@ -578,11 +663,11 @@ class ara:
                     y2 = []
                     for ii in x2:
                         y2.append(mult)
-                axs[1].set_title("GLOBAL LIFT VALUE WITH "+pre+" "+lbl+ " (baseline="+str("{:.1f}".format(mult3))+")",fontsize = 40)
-                axs[0].set_title("LOCAL LIFT CHANGE FROM "+ pre+" "+lbl+ " (baseline="+str("{:.1f}".format(mult3))+")",fontsize = 40)
+                axs[1].set_title("GLOBAL LIFT VALUE WITH "+pre+" "+lbl+ " (baseline="+str("{:.1f}".format(mult3))+")",fontsize = ara.font_size_big)
+                axs[0].set_title("LOCAL LIFT CHANGE FROM "+ pre+" "+lbl+ " (baseline="+str("{:.1f}".format(mult3))+")",fontsize = ara.font_size_big)
                 #axs[1].yticks(fontsize=20)
-                axs[0].tick_params(axis='y', labelsize=30)
-                axs[1].tick_params(axis='y', labelsize=30)
+                axs[0].tick_params(axis='y', labelsize=ara.font_size_normal)
+                axs[1].tick_params(axis='y', labelsize=ara.font_size_normal)
                 #axs[0].yticks(fontsize=20)
                 fname = "".join(x if x.isalnum() else "_" for x in pre+" "+lbl)
                 fname = os.path.join(ara.dir,fname+".png")
